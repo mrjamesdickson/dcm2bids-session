@@ -1,9 +1,9 @@
 {
-    "name": "dcm2bids-session-v11",
+    "name": "dcm2bids-session-v12",
     "description": "Runs dcm2niix https://github.com/rordenlab/dcm2niix/releases/download/v1.0.20241211/dcm2niix_lnx.zip on a session's scans, and uploads the NIFTI and BIDS json",
-    "version": "2.9",
+    "version": "2.10",
     "schema-version": "1.0",
-    "image": "xnatworks/dcm2bids-session:2.9",
+    "image": "xnatworks/dcm2bids-session:2.10",
     "type": "docker",
     "command-line": "python dcm2bids_wholeSession.py #SESSION_ID# #SESSION_LABEL# #SUBJECT# #PROJECT# #OVERWRITE# #SKIP# #FIELD# --host $XNAT_HOST --user $XNAT_USER --pass $XNAT_PASS --upload-by-ref False --dicomdir /dicom --niftidir /nifti",
     "override-entrypoint": true,
@@ -103,7 +103,7 @@
     "xnat": [
       {
         "name": "dcm2bids-session",
-        "description": "Run dcm2bids on a Session(v11)",
+        "description": "Run dcm2bids on a Session(v12)",
         "contexts": [
           "xnat:imageSessionData"
         ],

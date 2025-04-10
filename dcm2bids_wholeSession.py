@@ -68,7 +68,7 @@ def zipdir(dirPath=None, zipFilePath=None, includeDirInZip=True):
         if not includeDirInZip:
             archivePath = archivePath.replace(dirToZip + os.path.sep, "", 1)
         return os.path.normcase(archivePath)
-    with zipfile.ZipFile(zipFilePath, "w",compression=zipfile.ZIP_DEFLATED) as outFile:
+    with zipfile.ZipFile(zipFilePath, "w", allowZip64=True,compression=zipfile.ZIP_DEFLATED) as outFile:
         for (archiveDirPath, dirNames, fileNames) in os.walk(dirPath):
             for fileName in fileNames:
                 filePath = os.path.join(archiveDirPath, fileName)
