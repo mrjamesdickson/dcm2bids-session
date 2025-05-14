@@ -103,7 +103,7 @@
     "xnat": [
       {
         "name": "dcm2bids-session-v13",
-        "description": "Run dcm2bids on a Session(v12)",
+        "description": "Run dcm2bids on a Session(v13)",
         "contexts": [
           "xnat:imageSessionData"
         ],
