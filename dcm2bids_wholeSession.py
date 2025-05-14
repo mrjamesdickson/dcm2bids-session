@@ -11,7 +11,7 @@ import zipfile
 import tempfile
 import re
 import csv
-import dicom as dicomLib
+import pydicom as dicomLib
 from shutil import copy as fileCopy
 from nipype.interfaces.dcm2nii import Dcm2nii
 from collections import OrderedDict
@@ -32,6 +32,10 @@ def cleanServer(server):
 
 def isTrue(arg):
     return arg is not None and (arg == 'Y' or arg == '1' or arg == 'True')
+
+
+def uploadNifti():
+    print("upload nifti");
 
 
 def download(name, pathDict):
@@ -134,16 +138,16 @@ builddir = os.getcwd()
 
 # Set up working directory
 if not os.access(dicomdir, os.R_OK):
-    print 'Making DICOM directory %s' % dicomdir
+    print('Making DICOM directory %s' % dicomdir)
     os.mkdir(dicomdir)
 if not os.access(niftidir, os.R_OK):
-    print 'Making NIFTI directory %s' % niftidir
+    print('Making NIFTI directory %s' % niftidir)
     os.mkdir(niftidir)
 if not os.access(imgdir, os.R_OK):
-    print 'Making NIFTI image directory %s' % imgdir
+    print('Making NIFTI image directory %s' % imgdir)
     os.mkdir(imgdir)
 if not os.access(bidsdir, os.R_OK):
-    print 'Making NIFTI BIDS directory %s' % bidsdir
+    print('Making NIFTI BIDS directory %s' % bidsdir)
     os.mkdir(bidsdir)
 
 try:
@@ -156,31 +160,31 @@ try:
             r = xnatSession.httpsess.get(url, **kwargs)
             r.raise_for_status()
         except (requests.ConnectionError, requests.exceptions.RequestException) as e:
-            print "Request Failed"
-            print "    " + str(e)
+            print("Request Failed")
+            print("    " + str(e))
             sys.exit(1)
         return r
     
     if project is None or subject is None:
         # Get project ID and subject ID from session JSON
-        print "Get project and subject ID for session ID %s." % session
+        print("Get project and subject ID for session ID %s." % session)
         r = get(host + "/data/experiments/%s" % session, params={"format": "json", "handler": "values", "columns": "project,subject_ID"})
         sessionValuesJson = r.json()["ResultSet"]["Result"][0]
         project = sessionValuesJson["project"] if project is None else project
         subjectID = sessionValuesJson["subject_ID"]
-        print "Project: " + project
-        print "Subject ID: " + subjectID
+        print("Project: " + project)
+        print("Subject ID: " + subjectID)
     
         if subject is None:
-            print
-            print "Get subject label for subject ID %s." % subjectID
+            print()
+            print("Get subject label for subject ID %s." % subjectID)
             r = get(host + "/data/subjects/%s" % subjectID, params={"format": "json", "handler": "values", "columns": "label"})
             subject = r.json()["ResultSet"]["Result"][0]["label"]
-            print "Subject label: " + subject
+            print("Subject label: " + subject)
     
     # Get list of scan ids
-    print
-    print "Get scan list for session ID %s." % session
+    print()
+    print("Get scan list for session ID %s." % session)
     r = get(host + "/data/experiments/%s/scans" % session, params={"format": "json", "columns": "ID,quality,series_description,type,xnat:imagescandata/series_class"})
     scanRequestResultList = r.json()["ResultSet"]["Result"]
     if skipUnusable:
@@ -188,7 +192,7 @@ try:
         fieldList = []
         for scan in scanRequestResultList:
             if scan['quality'] == "unusable":
-                print "Skiping %s because its quality=unusable" % scan['ID']
+                print("Skiping %s because its quality=unusable" % scan['ID'])
                 continue
             scanIDList.append(scan['ID'])
             fieldList.append(scan[fieldShortcut])
@@ -196,13 +200,13 @@ try:
         scanIDList = [scan['ID'] for scan in scanRequestResultList]
         fieldList = [scan[fieldShortcut] for scan in scanRequestResultList]  # { id: sd for (scan['ID'], scan['series_description']) in scanRequestResultList }
 
-    print 'Found scans %s.' % ', '.join(scanIDList)
-    print '%s %s' % (fieldName, ', '.join(fieldList))
+    print('Found scans %s.' % ', '.join(scanIDList))
+    print('%s %s' % (fieldName, ', '.join(fieldList)))
     
     # Get site- and project-level configs
     bidsmaplist = []
-    print
-    print "Get site-wide BIDS map"
+    print()
+    print("Get site-wide BIDS map")
     # We don't use the convenience get() method because that throws exceptions when the object is not found.
     r = xnatSession.httpsess.get(host + "/data/config/bids/bidsmap", params={"contents": True})
     if r.ok:
@@ -211,9 +215,9 @@ try:
             if mapentry not in bidsmaplist:
                 bidsmaplist.append(mapentry)
     else:
-        print "Could not read site-wide BIDS map"
+        print("Could not read site-wide BIDS map")
     
-    print "Get project BIDS map if one exists"
+    print("Get project BIDS map if one exists")
     r = xnatSession.httpsess.get(host + "/data/projects/%s/config/bids/bidsmap" % project, params={"contents": True})
     if r.ok:
         bidsmaptoadd = r.json()
@@ -221,9 +225,9 @@ try:
             if mapentry not in bidsmaplist:
                 bidsmaplist.append(mapentry)
     else:
-        print "Could not read project BIDS map"
+        print("Could not read project BIDS map")
     
-    print "BIDS map: " + json.dumps(bidsmaplist)
+    print("BIDS map: " + json.dumps(bidsmaplist))
     
     # Collapse human-readable JSON to dict for processing
     key = 'xnat_field'
@@ -242,27 +246,27 @@ try:
     bidscount = collections.Counter(resolved)
     
     # Remove multiples
-    multiples = {seriesdesc: count for seriesdesc, count in bidscount.viewitems() if count > 1}
+    multiples = {seriesdesc: count for seriesdesc, count in bidscount.items() if count > 1}
     
     # BIDS base name (BIDS reserves _ and - so remove these)
     base = "sub-" + re.sub(r"[_-]", "", subject) + "_ses-" + re.sub(r"[_-]", "", sessionLabel) + "_"
-    print "Bids base name is %s" % base
+    print("Bids base name is %s" % base)
     
     # Cheat and reverse scanid and seriesdesc lists so numbering is in the right order
     scansTsv = []
     for scanid, seriesdesc in zip(reversed(scanIDList), reversed(fieldList)):
-        print
-        print 'Beginning process for scan %s.' % scanid
+        print()
+        print('Beginning process for scan %s.' % scanid)
         os.chdir(builddir)
     
-        print 'Assigning BIDS name for scan %s.' % scanid
+        print('Assigning BIDS name for scan %s.' % scanid)
 
         if seriesdesc.lower() not in bidsnamemap:
-            print "Series " + seriesdesc + " not found in BIDSMAP"
+            print("Series " + seriesdesc + " not found in BIDSMAP")
             # bidsname = "Z"
             continue  # Exclude series from processing
         else:
-            print "Series " + seriesdesc + " matched " + bidsnamemap[seriesdesc.lower()]
+            print("Series " + seriesdesc + " matched " + bidsnamemap[seriesdesc.lower()])
             match = bidsnamemap[seriesdesc.lower()]
     
         # split before last _
@@ -283,18 +287,18 @@ try:
             bidsname = match
 
         bidsname = base + bidsname
-        print "Base " + base + " series " + seriesdesc + " match " + bidsname
+        print("Base " + base + " series " + seriesdesc + " match " + bidsname)
         bidssubdir = xnatbidsfns.getSubdir(xnatbidsfns.generateBidsNameMap(bidsname)['modality'])
         if bidssubdir is None:
-            print "Scan %s is assigned bidsname %s, which does NOT map to a bids subdirectory. Skipping" % (scanid, bidsname)
+            print("Scan %s is assigned bidsname %s, which does NOT map to a bids subdirectory. Skipping" % (scanid, bidsname))
             continue
         bidsfilename = os.path.join(bidssubdir, bidsname)
     
         # Get scan resources
-        print "Get scan resources for scan %s." % scanid
+        print("Get scan resources for scan %s." % scanid)
         r = get(host + "/data/experiments/%s/scans/%s/resources" % (session, scanid), params={"format": "json"})
         scanResources = r.json()["ResultSet"]["Result"]
-        print 'Found resources %s.' % ', '.join(res["label"] for res in scanResources)
+        print('Found resources %s.' % ', '.join(res["label"] for res in scanResources))
     
         ##########
         # Do initial checks to determine if scan should be skipped
@@ -302,26 +306,26 @@ try:
         if hasNifti and not overwrite:
             # Add entry to scans.tsv
             scansTsv.append([bidsfilename, session, scanid])
-            print "Scan %s has a preexisting NIFTI resource, and I am running with overwrite=False. Skipping." % scanid
+            print("Scan %s has a preexisting NIFTI resource, and I am running with overwrite=False. Skipping." % scanid)
             continue
     
         dicomResourceList = [res for res in scanResources if res["label"] == "DICOM"]
         imaResourceList = [res for res in scanResources if res["format"] == "IMA"]
     
         if len(dicomResourceList) == 0 and len(imaResourceList) == 0:
-            print "Scan %s has no DICOM or IMA resource." % scanid
+            print("Scan %s has no DICOM or IMA resource." % scanid)
             # scanInfo['hasDicom'] = False
             continue
         elif len(dicomResourceList) == 0 and len(imaResourceList) > 1:
-            print "Scan %s has more than one IMA resource and no DICOM resource. Skipping." % scanid
+            print("Scan %s has more than one IMA resource and no DICOM resource. Skipping." % scanid)
             # scanInfo['hasDicom'] = False
             continue
         elif len(dicomResourceList) > 1 and len(imaResourceList) == 0:
-            print "Scan %s has more than one DICOM resource and no IMA resource. Skipping." % scanid
+            print("Scan %s has more than one DICOM resource and no IMA resource. Skipping." % scanid)
             # scanInfo['hasDicom'] = False
             continue
         elif len(dicomResourceList) > 1 and len(imaResourceList) > 1:
-            print "Scan %s has more than one DICOM resource and more than one IMA resource. Skipping." % scanid
+            print("Scan %s has more than one DICOM resource and more than one IMA resource. Skipping." % scanid)
             # scanInfo['hasDicom'] = False
             continue
     
@@ -332,19 +336,19 @@ try:
     
         if dicomResource is not None and dicomResource["file_count"]:
             if int(dicomResource["file_count"]) == 0:
-                print "DICOM resource for scan %s has no files. Checking IMA resource." % scanid
+                print("DICOM resource for scan %s has no files. Checking IMA resource." % scanid)
                 if imaResource["file_count"]:
                     if int(imaResource["file_count"]) == 0:
-                        print "IMA resource for scan %s has no files either. Skipping." % scanid
+                        print("IMA resource for scan %s has no files either. Skipping." % scanid)
                         continue
                 else:
-                    print "IMA resource for scan %s has a blank \"file_count\", so I cannot check it to see if there are no files. I am not skipping the scan, but this may lead to errors later if there are no files." % scanid
+                    print("IMA resource for scan %s has a blank \"file_count\", so I cannot check it to see if there are no files. I am not skipping the scan, but this may lead to errors later if there are no files." % scanid)
         elif imaResource is not None and imaResource["file_count"]:
             if int(imaResource["file_count"]) == 0:
-                print "IMA resource for scan %s has no files. Skipping." % scanid
+                print("IMA resource for scan %s has no files. Skipping." % scanid)
                 continue
         else:
-            print "DICOM and IMA resources for scan %s both have a blank \"file_count\", so I cannot check to see if there are no files. I am not skipping the scan, but this may lead to errors later if there are no files." % scanid
+            print("DICOM and IMA resources for scan %s both have a blank \"file_count\", so I cannot check to see if there are no files. I am not skipping the scan, but this may lead to errors later if there are no files." % scanid)
     
         ###########
         ## Prepare DICOM directory structure
@@ -366,24 +370,24 @@ try:
     
         if not usingDicom:
     
-            print 'Get IMA resource id for scan %s.' % scanid
+            print('Get IMA resource id for scan %s.' % scanid)
             r = get(host + "/data/experiments/%s/scans/%s/resources" % (session, scanid), params={"format": "json"})
             resourceDict = {resource['format']: resource['xnat_abstractresource_id'] for resource in r.json()["ResultSet"]["Result"]}
     
             if resourceDict["IMA"]:
                 resourceid = resourceDict["IMA"]
             else:
-                print "Couldn't get xnat_abstractresource_id for IMA file list."
+                print("Couldn't get xnat_abstractresource_id for IMA file list.")
     
         # Deal with DICOMs
-        print 'Get list of DICOM files for scan %s.' % scanid
+        print('Get list of DICOM files for scan %s.' % scanid)
     
         if usingDicom:
             filesURL = host + "/data/experiments/%s/scans/%s/resources/DICOM/files" % (session, scanid)
         elif resourceid is not None:
             filesURL = host + "/data/experiments/%s/scans/%s/resources/%s/files" % (session, scanid, resourceid)
         else:
-            print "Trying to convert IMA files but there is no resource id available. Skipping."
+            print("Trying to convert IMA files but there is no resource id available. Skipping.")
             continue
     
         r = get(filesURL, params={"format": "json", "locator": "absolutePath"})
@@ -392,12 +396,12 @@ try:
     
         ##########
         # Download DICOMs
-        print "Checking files for scan %s." % scanid
+        print("Checking files for scan %s." % scanid)
     
         # Check secondary
         # Download any one DICOM from the series and check its headers
         # If the headers indicate it is a secondary capture, we will skip this series.
-        dicomFileList = dicomFileDict.items()
+        dicomFileList = list(dicomFileDict.items())
     
         (name, pathDict) = dicomFileList[0]
         scanDicomDir = os.path.dirname(pathDict['absolutePath'])
@@ -409,17 +413,17 @@ try:
             continue
     
         if usingDicom:
-            print 'Checking modality in DICOM headers of file %s.' % name
-            d = dicomLib.read_file(name)
+            print('Checking modality in DICOM headers of file %s.' % name)
+            d = dicomLib.dcmread(name)
             modalityHeader = d.get((0x0008, 0x0060), None)
             if modalityHeader:
-                print 'Modality header: %s' % modalityHeader
+                print('Modality header: %s' % modalityHeader)
                 modality = modalityHeader.value.strip("'").strip('"')
                 if modality == 'SC' or modality == 'SR':
-                    print 'Scan %s is a secondary capture. Skipping.' % scanid
+                    print('Scan %s is a secondary capture. Skipping.' % scanid)
                     continue
             else:
-                print 'Could not read modality from DICOM headers. Skipping.'
+                print('Could not read modality from DICOM headers. Skipping.')
                 continue
     
         ##########
@@ -432,19 +436,19 @@ try:
                 continue
     
         os.chdir(builddir)
-        print 'Done downloading for scan %s.' % scanid
-        print
+        print('Done downloading for scan %s.' % scanid)
+        print()
     
         ##########
         # Prepare NIFTI directory structure
         scanBidsDir = os.path.join(bidsdir, scanid)
         if not os.path.isdir(scanBidsDir):
-            print 'Creating scan NIFTI BIDS directory %s.' % scanBidsDir
+            print('Creating scan NIFTI BIDS directory %s.' % scanBidsDir)
             os.mkdir(scanBidsDir)
     
         scanImgDir = os.path.join(imgdir, scanid)
         if not os.path.isdir(scanImgDir):
-            print 'Creating scan NIFTI image directory %s.' % scanImgDir
+            print('Creating scan NIFTI image directory %s.' % scanImgDir)
             os.mkdir(scanImgDir)
     
         # Remove any existing files in the builddir.
@@ -456,16 +460,16 @@ try:
             os.remove(os.path.join(scanImgDir, f))
     
         # Convert the differences
-        print 'Converting scan %s to NIFTI...' % scanid
+        print('Converting scan %s to NIFTI...' % scanid)
         # Do some stuff to execute dcm2niix as a subprocess
     
         if usingDicom:
             dcm2niix_command = "dcm2niix -b y -z y".split() + dcm2niixArgs + " -f {} -o {} {}".format(bidsname, scanBidsDir, scanDicomDir).split()
-            print "Executing command: " + " ".join(dcm2niix_command)
-            print subprocess.check_output(dcm2niix_command)
+            print("Executing command: " + " ".join(dcm2niix_command))
+            print(subprocess.check_output(dcm2niix_command))
         else:
             # call dcm2nii for converting ima files
-            print subprocess.check_output("dcm2nii -b @PIPELINE_DIR_PATH@/catalog/DicomToBIDS/resources/dcm2nii.ini -g y -f Y -e N -p N -d N -o {} {}".format(scanBidsDir, scanDicomDir).split())
+            print(subprocess.check_output("dcm2nii -b @PIPELINE_DIR_PATH@/catalog/DicomToBIDS/resources/dcm2nii.ini -g y -f Y -e N -p N -d N -o {} {}".format(scanBidsDir, scanDicomDir).split()))
     
             #print subprocess.check_output("mv {}/*.nii.gz {}/{}.nii.gz".format(scanBidsDir, scanBidsDir, "bidsname").split())
     
@@ -531,7 +535,7 @@ try:
             with open(os.path.join(scanBidsDir, bidsname) + ".json", "w+") as outfile:
                 json.dump(json_contents, outfile, indent=4)
     
-        print 'Done.'
+        print('Done.')
     
         # Move imaging to image directory
         for f in os.listdir(scanBidsDir):
@@ -596,13 +600,13 @@ try:
 
         ##########
         # Upload results
-        print
-        print 'Preparing to upload files for scan %s.' % scanid
+        print()
+        print('Preparing to upload files for scan %s.' % scanid)
     
         # If we have a NIFTI resource and we've reached this point, we know overwrite=True.
         # We should delete the existing NIFTI resource.
         if hasNifti:
-            print "Scan %s has a preexisting NIFTI resource. Deleting it now." % scanid
+            print("Scan %s has a preexisting NIFTI resource. Deleting it now." % scanid)
     
             try:
                 queryArgs = {}
@@ -614,25 +618,28 @@ try:
                 r = xnatSession.httpsess.delete(host + "/data/experiments/%s/scans/%s/resources/BIDS" % (session, scanid), params=queryArgs)
                 r.raise_for_status()
             except (requests.ConnectionError, requests.exceptions.RequestException) as e:
-                print "There was a problem deleting"
-                print "    " + str(e)
-                print "Skipping upload for scan %s." % scanid
+                print("There was a problem deleting")
+                print("    " + str(e))
+                print("Skipping upload for scan %s." % scanid)
                 continue
     
         # Uploading
-        print 'Uploading files for scan %s' % scanid
+        print('Uploading files for scan %s' % scanid)
         queryArgs = {"format": "NIFTI", "content": "NIFTI_RAW", "tags": "BIDS"}
         if workflowId is not None:
             queryArgs["event_id"] = workflowId
         if uploadByRef:
             queryArgs["reference"] = os.path.abspath(scanImgDir)
             r = xnatSession.httpsess.put(host + "/data/experiments/%s/scans/%s/resources/NIFTI/files" % (session, scanid), params=queryArgs)
+            #r = uploadNifti(xnatSession,host + "/data/experiments/%s/scans/%s/resources/NIFTI/files" % (session, scanid), params=queryArgs)
         else:
             queryArgs["extract"] = True
             (t, tempFilePath) = tempfile.mkstemp(suffix='.zip')
             zipdir(dirPath=os.path.abspath(scanImgDir), zipFilePath=tempFilePath, includeDirInZip=False)
             files = {'file': open(tempFilePath, 'rb')}
             r = xnatSession.httpsess.put(host + "/data/experiments/%s/scans/%s/resources/NIFTI/files" % (session, scanid), params=queryArgs, files=files)
+            #r = uploadNifti(xnatSession,host + "/data/experiments/%s/scans/%s/resources/NIFTI/files" % (session, scanid), params=queryArgs, files=files)
+
             os.remove(tempFilePath)
         r.raise_for_status()
     
@@ -660,24 +667,24 @@ try:
         #    os.remove(os.path.join(scanDicomDir, f))
         #os.rmdir(scanDicomDir)
     
-        print
-        print 'All done with image conversion.'
+        print()
+        print('All done with image conversion.')
     
     ##########
     # Generate session-level metadata files
     previouschanges = ""
     
     # Remove existing files if they are there
-    print "Check for presence of session-level BIDS data"
+    print("Check for presence of session-level BIDS data")
     r = get(host + "/data/experiments/%s/resources" % session, params={"format": "json"})
     sessionResources = r.json()["ResultSet"]["Result"]
-    print 'Found resources %s.' % ', '.join(res["label"] for res in sessionResources)
+    print('Found resources %s.' % ', '.join(res["label"] for res in sessionResources))
     
     # Do initial checks to determine if session-level BIDS metadata is present
     hasSessionBIDS = any([res["label"] == "BIDS" for res in sessionResources])
     
     if hasSessionBIDS:
-        print "Session has preexisting BIDS resource. Deleting previous BIDS metadata if present."
+        print("Session has preexisting BIDS resource. Deleting previous BIDS metadata if present.")
     
         # Consider making CHANGES a real, living changelog
         # r = get( host + "/data/experiments/%s/resources/BIDS/files/CHANGES"%(session) )
@@ -693,22 +700,22 @@ try:
             r.raise_for_status()
             uploadSessionBids = True
         except (requests.ConnectionError, requests.exceptions.RequestException) as e:
-            print "There was a problem deleting"
-            print "    " + str(e)
-            print "Skipping upload for session-level files."
+            print("There was a problem deleting")
+            print("    " + str(e))
+            print("Skipping upload for session-level files.")
             uploadSessionBids = False
     
-        print "Done"
-        print ""
+        print("Done")
+        print("")
     
     # Fetch metadata from project
-    print "Fetching project {} metadata".format(project)
+    print("Fetching project {} metadata".format(project))
     rawprojectdata = get(host + "/data/projects/%s" % project, params={"format": "json"})
     projectdata = rawprojectdata.json()
-    print "Got project metadata\n"
+    print("Got project metadata\n")
     
     # Build dataset description
-    print "Constructing BIDS data"
+    print("Constructing BIDS data")
     dataset_description = OrderedDict()
     dataset_description['Name'] = project
     
@@ -720,7 +727,7 @@ try:
     # Compile investigators and PI into names list
     invnames = []
     invfield = [x for x in projectdata["items"][0]["children"] if x["field"] == "investigators/investigator"]
-    print str(invfield)
+    print(str(invfield))
     
     if invfield != []:
         invs = invfield[0]["items"]
@@ -783,7 +790,7 @@ try:
     r = xnatSession.httpsess.put(host + "/data/experiments/%s/resources/BIDS/files/%s" % (session, tsvname), params=queryArgs, files=files)
     r.raise_for_status()
     
-    print 'All done with session-level metadata.'
+    print('All done with session-level metadata.')
 
 # All done
 finally:
