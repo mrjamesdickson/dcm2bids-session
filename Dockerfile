@@ -1,4 +1,4 @@
-FROM python:3.12
+FROM python:3.13
 RUN mkdir /src
 COPY  dcm2bids_wholeSession.py /src
 COPY xnatjsession /src/xnatjsession
@@ -12,6 +12,7 @@ RUN apt-get update && apt-get install -y \
         && \
     pip install \
         pydicom \
+        pyOpenSSL \
         nipype \
         requests \
         && \
