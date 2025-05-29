@@ -559,6 +559,10 @@ try:
     
                 # Rename files
                 for echo in multiple_echoes:
+
+                    scansTsv.append([os.path.join(bidssubdir, echo), session, scanid])
+                    continue
+                    #verify if the rest of this renaming is necessary for multi echo. was renaming to same file and losing data. Should leave naming up to dcm2niix
                     splitname = echo.split("_")
     
                     # Locate run if present in BIDS name
@@ -658,7 +662,7 @@ try:
             r = xnatSession.httpsess.put(host + "/data/experiments/%s/scans/%s/resources/BIDS/files" % (session, scanid), params=queryArgs, files=files)
             os.remove(tempFilePath)
         r.raise_for_status()
-    
+
         ###########
         ## Clean up input directory
         #print
