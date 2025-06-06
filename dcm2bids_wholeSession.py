@@ -88,6 +88,33 @@ def zipdir(dirPath=None, zipFilePath=None, includeDirInZip=True):
                 outFile.writestr(zipInfo, "")
 
 
+
+def rename_echo_file(filename):
+     # Extract echo number
+    echo_match = re.search(r'_e(\d+)', filename)
+    echo_str = f"echo-{echo_match.group(1)}" if echo_match else None
+
+    # Remove _e# from filename
+    filename = re.sub(r'_e\d+', '', filename)
+
+    # Replace _ph with _part-phase (we'll move it later)
+    has_phase = '_ph' in filename
+    filename = re.sub(r'_ph', '', filename)  # remove it temporarily
+
+    # Insert echo-# after last _run-XX
+    if echo_str:
+        run_matches = list(re.finditer(r'_run-\d+', filename))
+        if run_matches:
+            last_run = run_matches[-1]
+            insert_pos = last_run.end()
+            filename = filename[:insert_pos] + f"_{echo_str}" + filename[insert_pos:]
+
+    # Insert _part-phase before _bold
+    if has_phase:
+       filename = re.sub(r'(_bold|_sbref)', r'_part-phase\1', filename)
+    return filename
+
+
 BIDSVERSION = "1.0.1"
 
 parser = argparse.ArgumentParser(description="Run dcm2niix on every file in a session")
@@ -555,49 +582,30 @@ try:
                 filesinecho = len(multiple_echoes) / numechoes
     
                 echonumber = 1
-                filenumber = 1
-    
-                # Rename files
-                for echo in multiple_echoes:
+                filenumber = 0  # Start from 0 for simpler logic
 
-                    scansTsv.append([os.path.join(bidssubdir, echo), session, scanid])
-                    continue
-                    #verify if the rest of this renaming is necessary for multi echo. was renaming to same file and losing data. Should leave naming up to dcm2niix
-                    splitname = echo.split("_")
-    
-                    # Locate run if present in BIDS name
-                    runstring = [s for s in splitname if "run" in s]
-    
-                    if runstring != []:
-                        runindex = splitname.index(runstring[0])
-                        splitname.insert(runindex, "echo-" + str(echonumber))  # insert where run is (will displace run to later position)
-                    else:
-                        splitname.insert(-1, "echo-" + str(echonumber))  # insert right before the data type
-    
-                    # Remove the "a" or other character from before the .nii.gz if not on the first echo
-                    if (echonumber > 1):
-                        ending = splitname[-1].split(".")
-                        cleanedtype = ending[0][:-1]
-                        ending[0] = cleanedtype
-                        cleanedname = ".".join(ending)
-                        splitname[-1] = cleanedname
-    
-                    # Rejoin name
-                    echoname = "_".join(splitname)
-    
-                    # Do file rename
-                    os.rename(os.path.join(dir, echo), os.path.join(dir, echoname))
+                for echo in multiple_echoes:  # assuming `echo_files` is your list of files to process
+                    
+                    newechoname=rename_echo_file(echo)
 
-                    # Add to scansTsv
-                    scansTsv.append([os.path.join(bidssubdir, echoname), session, scanid])
-    
-                    # When file count rolls over increment echo and continue
-                    if filenumber == filesinecho:
-                        echonumber += 1
-                        filenumber = 1  # restart count for new echo
-    
-                    # Increment file count each time one is renamed
-                    filenumber += 1
+                   
+                    src_path = os.path.join(dir, echo)
+                    dest_path = os.path.join(dir, newechoname)
+
+
+
+                    # Safety check to avoid collision
+                    if os.path.exists(dest_path):
+                        raise FileExistsError(f"Collision detected: {dest_path} already exists!")
+
+                    # Rename file
+                    print("rename ",src_path,dest_path)
+                    os.rename(src_path, dest_path)
+
+                    # Add to scans.tsv
+                    scansTsv.append([os.path.join(bidssubdir, newechoname), session, scanid])
+
+
         else:
             # Add to scansTsv
             scansTsv.append([bidsfilename, session, scanid])
