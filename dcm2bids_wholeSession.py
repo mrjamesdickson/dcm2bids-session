@@ -110,7 +110,9 @@ def rename_echo_file(filename):
             filename = filename[:insert_pos] + f"_{echo_str}" + filename[insert_pos:]
 
     # Insert _part-phase before _bold
-    if has_phase:
+    has_part_phase = '_part-phase' in filename
+
+    if has_phase and not has_part_phase:
        filename = re.sub(r'(_bold|_sbref)', r'_part-phase\1', filename)
     return filename
 
